@@ -1,0 +1,5 @@
+{
+  "_comment": "リポジトリ直下に .memcheck.json として置く。deprecated_terms=退役した正本名（memory がこれを現役として参照していたら検出）。memory_dir は省略可。",
+  "deprecated_terms": ["docs/OLD_GUIDE.md", "scripts/legacy-runner"],
+  "exemption_words": ["退役", "旧", "archive", "deprecated", "legacy", "do not use"]
+}
