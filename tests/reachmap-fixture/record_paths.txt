@@ -1,0 +1,2 @@
+# fixture record_paths.txt
+records/

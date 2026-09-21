@@ -1,0 +1,123 @@
+{
+  "description": "reachmap fixture synthetic test expected results",
+  "fixture_root": "tests/reachmap-fixture",
+  "entries": [
+    {
+      "path": "CLAUDE.md",
+      "tag": "E1",
+      "is_conditional": false
+    }
+  ],
+  "nodes": {
+    "CLAUDE.md": {
+      "reachable": true,
+      "min_hops": 0,
+      "via": "CLAUDE.md",
+      "classification": "entry",
+      "other_routes": 0,
+      "negative_mentions": 0,
+      "code_mentions": 0
+    },
+    "hop1.md": {
+      "reachable": true,
+      "min_hops": 1,
+      "via": "CLAUDE.md",
+      "classification": "hop1",
+      "other_routes": 0,
+      "negative_mentions": 0,
+      "code_mentions": 0
+    },
+    "hop2.md": {
+      "reachable": true,
+      "min_hops": 2,
+      "via": "CLAUDE.md",
+      "classification": "hop2",
+      "other_routes": 0,
+      "negative_mentions": 0,
+      "code_mentions": 0
+    },
+    "sub1/ambig.md": {
+      "reachable": true,
+      "min_hops": 1,
+      "via": "CLAUDE.md",
+      "classification": "ambiguous_match",
+      "other_routes": 0,
+      "negative_mentions": 0,
+      "code_mentions": 0
+    },
+    "sub2/ambig.md": {
+      "reachable": true,
+      "min_hops": 1,
+      "via": "CLAUDE.md",
+      "classification": "ambiguous_match",
+      "other_routes": 0,
+      "negative_mentions": 0,
+      "code_mentions": 0
+    },
+    "orphan.md": {
+      "reachable": false,
+      "min_hops": null,
+      "via": null,
+      "classification": "orphan",
+      "conditional_via": 0,
+      "negative_mentions": 0,
+      "code_mentions": 1,
+      "code_mention_source": "script.py"
+    },
+    "negated.md": {
+      "reachable": false,
+      "min_hops": null,
+      "via": null,
+      "classification": "negated",
+      "conditional_via": 0,
+      "negative_mentions": 1,
+      "negative_mention_source": "CLAUDE.md",
+      "code_mentions": 0
+    },
+    "records/archived.md": {
+      "reachable": false,
+      "min_hops": null,
+      "via": null,
+      "classification": "excluded_by_record_paths",
+      "in_graph_nodes": false,
+      "in_orphan_population": false
+    }
+  },
+  "broken_references": [
+    {
+      "token": "nonexistent_file.md",
+      "source": "CLAUDE.md"
+    }
+  ],
+  "ambiguous_references": [
+    {
+      "token": "ambig.md",
+      "source": "CLAUDE.md",
+      "candidates": [
+        "sub1/ambig.md",
+        "sub2/ambig.md"
+      ]
+    }
+  ],
+  "duplicates": [
+    {
+      "basename": "ambig.md",
+      "paths": [
+        "sub1/ambig.md",
+        "sub2/ambig.md"
+      ]
+    }
+  ],
+  "summary": {
+    "entries_total": 1,
+    "entries_conditional": 0,
+    "reachable_total": 4,
+    "hop1": 3,
+    "hop2": 1,
+    "hop3_plus": 0,
+    "orphans": 2,
+    "broken_refs": 1,
+    "ambiguous_refs": 1,
+    "duplicates": 1
+  }
+}

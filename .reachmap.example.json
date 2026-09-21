@@ -1,0 +1,27 @@
+{
+  "_comment": "リポジトリ直下に .reachmap.json として置く。record_prefixes=記録・証跡（グラフから除外）。extra_entries=条件付き入口。exemption_words=否定言及の判定語。",
+  "record_prefixes": [
+    "docs/archive/",
+    "logs/",
+    "worklog/"
+  ],
+  "extra_entries": [
+    {
+      "glob": "notes/.claude/skills/*/SKILL.md",
+      "tag": "cond:notes"
+    }
+  ],
+  "exemption_words": [
+    "退役",
+    "旧",
+    "archive",
+    "deprecated",
+    "legacy",
+    "do not use"
+  ],
+  "home_entries": true,
+  "hook_events": [
+    "SessionStart",
+    "UserPromptSubmit"
+  ]
+}
