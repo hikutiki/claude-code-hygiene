@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/cache-keepalive.py --mode arm",
+            "async": true,
+            "asyncRewake": true,
+            "asyncTimeout": 43200000,
+            "rewakeMessage": "キャッシュ延命の定時起床。「〔keepalive〕」とだけ返答し、ツールを使わず、他の作業をしないこと。",
+            "rewakeSummary": "cache keepalive"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/cache-keepalive.py --mode user"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/cache-keepalive.py --mode handoff"
+          }
+        ]
+      }
+    ]
+  }
+}
