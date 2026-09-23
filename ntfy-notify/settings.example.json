@@ -1,0 +1,13 @@
+{
+  "env": {
+    "NTFY_TOPIC": "<推測されにくい文字列>"
+  },
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "bash ~/.claude/hooks/ntfy-notify.sh stop" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "bash ~/.claude/hooks/ntfy-notify.sh notification" } ] }
+    ]
+  }
+}
