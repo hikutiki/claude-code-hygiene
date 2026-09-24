@@ -1,89 +1,86 @@
-# cache-keepalive — Claude Code の会話キャッシュを延命するフック
+# cache-keepalive — a hook that keeps Claude Code's conversation cache alive
 
-Claude Code の会話を放置している間、55分ごとに本体を短く起こして「〔keepalive〕」とだけ返させ、
-プロンプトキャッシュ（1時間）が切れないようにする Claude Code フックです。
-寝落ちや長い離席のあと **同じ会話に戻る** とき、会話全体をキャッシュに書き直す費用を避けます。
+[日本語](README.ja.md)
 
-> English summary: A Claude Code hook that wakes an idle session every 55 minutes with a one-word
-> "〔keepalive〕" turn so the 1-hour prompt cache never expires. Worth it only if you come back to the
-> same session. Stops automatically 12 hours after your last prompt.
+While a Claude Code conversation sits idle, this hook wakes it briefly every 55 minutes and has it reply with just "〔keepalive〕", so the prompt cache (1 hour) never expires.
+When you **come back to the same conversation** after falling asleep or a long break, you avoid paying to write the whole conversation into the cache again.
 
-## 仕組み
+## How it works
 
-- `Stop` フック（`async` + `asyncRewake`）が、応答が終わるたびに見張りを1本仕掛けます（前の見張りは止めます）。
-- 見張りは会話記録（transcript）の **更新時刻だけ** を見ます。中身は読みません。
-- 無発話が 55 分（`KEEPALIVE_IDLE_SEC`）続いたら終了コード 2 で終わり、Claude Code が本体を起こします。
-  本体は `rewakeMessage` の指示で「〔keepalive〕」とだけ返し、その応答の `Stop` でまた次の見張りが仕掛けられます。
-- `UserPromptSubmit` フックが最後の発言時刻を記録します。最後の発言から 12 時間（`KEEPALIVE_MAX_SEC`）で止まります。
-  自動の起床やバックグラウンド完了の通知では延長されません。
-- `PostToolUse`（Skill）フックは、指定したスキル（既定: `handoff`・`session-wrap`）が呼ばれたらその会話の延命を止めます。
-- ヘッドレス実行（環境変数 `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` を付けた `claude -p` 等）では何もしません。
+- A `Stop` hook (`async` + `asyncRewake`) sets up one watcher each time a reply finishes (the previous watcher is stopped).
+- The watcher looks **only at the modification time** of the transcript. It does not read its contents.
+- After 55 minutes of silence (`KEEPALIVE_IDLE_SEC`) it exits with code 2, and Claude Code wakes the session.
+  Following `rewakeMessage`, the session replies with just "〔keepalive〕", and that reply's `Stop` sets up the next watcher.
+- A `UserPromptSubmit` hook records when you last spoke. It stops 12 hours (`KEEPALIVE_MAX_SEC`) after your last prompt.
+  Automatic wake-ups and background-completion notices do not extend it.
+- A `PostToolUse` (Skill) hook stops the keepalive for the conversation when one of the listed skills (default: `handoff`, `session-wrap`) is called.
+- Does nothing in headless runs (for example `claude -p` with the environment variable `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`).
 
-**注意:** `asyncRewake` は Claude Code の文書化されていない内部機能です。Claude Code 2.1.280 で動作を確認しました。
-更新後は `KEEPALIVE_IDLE_SEC=60` で起床を1回確かめてください。
+**Note:** `asyncRewake` is an undocumented internal Claude Code feature. Verified on Claude Code 2.1.280.
+After updating Claude Code, check one wake-up with `KEEPALIVE_IDLE_SEC=60`.
 
-## 損益分岐点（いつ得になるか）
+## Break-even (when it pays off)
 
-キャッシュの料金倍率（Claude API の料金、通常の入力単価を 1 とした場合）:
+Cache price multipliers (Claude API pricing, normal input price = 1):
 
-| 項目 | 倍率 |
+| item | multiplier |
 |---|---|
-| キャッシュ読み出し | 約 0.1（Claude Opus 5.5 は 0.05、Claude Fable 5.1 は 0.025） |
-| キャッシュ書き込み（1時間 TTL） | 2 |
-| キャッシュ書き込み（5分 TTL） | 1.25 |
+| cache read | about 0.1 (Claude Opus 5.5: 0.05, Claude Fable 5.1: 0.025) |
+| cache write (1-hour TTL) | 2 |
+| cache write (5-minute TTL) | 1.25 |
 
-会話全体の大きさを C とすると、
-- 延命 1 回 ≈ **C × 読み出し倍率**（＋「〔keepalive〕」の短い出力と、その 1 ターン分の小さな書き込み）
-- 延命しないで N 時間後に戻る ≈ **C × 2**（1時間 TTL の書き直し 1 回）
+With C = the size of the whole conversation:
+- one keepalive ≈ **C × read multiplier** (plus the short "〔keepalive〕" output and a small write for that one turn)
+- not keeping it alive and coming back N hours later ≈ **C × 2** (one 1-hour-TTL rewrite)
 
-| モデル | 延命 1 回（1時間ごと） | 書き直し 1 回 | 損益分岐点 |
+| model | one keepalive (hourly) | one rewrite | break-even |
 |---|---|---|---|
-| 読み出し 0.1 のモデル | 0.1 C | 2 C | 約 20 時間 |
-| Claude Opus 5.5（0.05） | 0.05 C | 2 C | 約 40 時間 |
-| Claude Fable 5.1（0.025） | 0.025 C | 2 C | 約 80 時間 |
+| models with read 0.1 | 0.1 C | 2 C | about 20 hours |
+| Claude Opus 5.5 (0.05) | 0.05 C | 2 C | about 40 hours |
+| Claude Fable 5.1 (0.025) | 0.025 C | 2 C | about 80 hours |
 
-- 既定の上限 12 時間は、どのモデルでも損益分岐点より手前です。**同じ会話に戻る限り** 延命のほうが安くなります。
-- **戻らずに新しい会話で再開した場合、延命した分はすべて無駄** です。区切りで新しい会話にする運用なら入れないでください。
-- 使用量の上限を超えてキャッシュの TTL が 5 分に縮む場合、55 分間隔の延命は効きません。
-- 定額プランで利用量がこの料金比のとおりに数えられるかは公表されていません。上の表は料金ベースの目安です。
+- The default 12-hour limit is below the break-even point for every model. **As long as you return to the same conversation**, keeping it alive is cheaper.
+- **If you start a new conversation instead of returning, every keepalive was wasted.** If you usually start fresh at each break, do not install this.
+- If you go over your usage limit and the cache TTL drops to 5 minutes, a 55-minute keepalive does nothing.
+- Whether subscription plans count usage according to these price ratios is not published. The table is a price-based estimate.
 
-## 導入
+## Install
 
-1. `cache-keepalive.py` を置く（例: `~/.claude/hooks/cache-keepalive.py`）。
-2. `settings.example.json` の `hooks` を、使う設定ファイル（`~/.claude/settings.json` か、プロジェクトの `.claude/settings.local.json`）へ追記する。
-   `command` のパスは置いた場所に合わせる。`asyncTimeout` はミリ秒（43200000 = 12時間）。
-3. 通知フック（ntfy 等）を使っている場合は、最後の応答が「〔keepalive〕」で始まるときに通知しないよう分岐を足す
-   （しないと 55 分ごとに通知が届きます）。会話記録（transcript）の末尾には、応答の後ろに `system`
-   （`stop_hook_summary`・`turn_duration` など）のレコードが付くことがあります。最後の応答を探すときは
-   `assistant`・`user` 以外のレコードを読み飛ばしてください（読み飛ばさないと判定が外れて通知が出ます。実機で確認）。
+1. Place `cache-keepalive.py` (for example at `~/.claude/hooks/cache-keepalive.py`).
+2. Add the `hooks` from `settings.example.json` to the settings file you use (`~/.claude/settings.json` or the project's `.claude/settings.local.json`).
+   Adjust the `command` path to where you placed the file. `asyncTimeout` is in milliseconds (43200000 = 12 hours).
+3. If you use a notification hook (ntfy etc.), add a branch so it does not notify when the last reply starts with "〔keepalive〕"
+   (otherwise you get a notification every 55 minutes). The end of the transcript can have `system` records
+   (`stop_hook_summary`, `turn_duration`, …) after the reply. When looking for the last reply, skip records other than
+   `assistant` and `user` (if you don't, the check misses and the notification goes out; confirmed on a real machine).
 
-| 環境変数 | 既定 | 意味 |
+| environment variable | default | meaning |
 |---|---|---|
-| `KEEPALIVE_IDLE_SEC` | 3300 | 無発話が何秒続いたら起こすか |
-| `KEEPALIVE_MAX_SEC` | 43200 | 最後の発言から何秒で止めるか |
-| `KEEPALIVE_STATE_DIR` | `~/.claude/cache-keepalive` | 状態ファイルの置き場（権限 700/600 で作成） |
+| `KEEPALIVE_IDLE_SEC` | 3300 | seconds of silence before waking the session |
+| `KEEPALIVE_MAX_SEC` | 43200 | seconds after your last prompt to stop |
+| `KEEPALIVE_STATE_DIR` | `~/.claude/cache-keepalive` | where state files live (created with permissions 700/600) |
 
-## 止め方
+## How to stop it
 
-| 止めたい範囲 | 方法 | 効くタイミング |
+| scope | how | takes effect |
 |---|---|---|
-| 今の会話だけ | `$KEEPALIVE_STATE_DIR/<session_id>.stop` を作る（指定スキルを呼べば自動で作られる） | 次に起こす直前 |
-| すべての会話を一時的に | `$KEEPALIVE_STATE_DIR/DISABLED` を作る（消せば再開） | 新しい見張りは即時。待機中の見張りは次に起こす直前 |
-| 待機中の見張りをすぐ終わらせる | `$KEEPALIVE_STATE_DIR/<session_id>.pid` の先頭の PID を `kill` する | 即時（次の応答で再び仕掛けられる） |
-| 完全にやめる | 設定ファイルから 3 つのフック（Stop・UserPromptSubmit・PostToolUse）を削除する | 次の応答から |
+| this conversation only | create `$KEEPALIVE_STATE_DIR/<session_id>.stop` (created automatically when a listed skill is called) | just before the next wake-up |
+| all conversations, temporarily | create `$KEEPALIVE_STATE_DIR/DISABLED` (delete it to resume) | new watchers: immediately. Waiting watchers: just before the next wake-up |
+| end a waiting watcher now | `kill` the PID at the top of `$KEEPALIVE_STATE_DIR/<session_id>.pid` | immediately (set up again at the next reply) |
+| remove completely | delete the 3 hooks (Stop, UserPromptSubmit, PostToolUse) from the settings file | from the next reply |
 
-## 安全のための動作
+## Safety behavior
 
-- 見張りは会話ごとに 1 本だけ。前の見張りを止めるのは、PID・起動時刻・実行スクリプトの実パスが記録と一致するときだけです
-  （PID が別のプロセスに再利用されていても止めません）。
-- 例外が起きたら何もせず終了します（本体を起こさない）。
-- 会話記録の中身は読みません。
+- Only one watcher per conversation. The previous watcher is stopped only when its PID, start time, and the real path of the running script all match the record
+  (a PID reused by another process is left alone).
+- On any exception it exits without doing anything (it does not wake the session).
+- It does not read the contents of the transcript.
 
-## 既知の制約
+## Known limits
 
-- 判定から起床までの間に会話が再開された場合、1 回だけ余分な「〔keepalive〕」が入ることがあります。
-- 起床の間隔は「最後の書き込みから 55 分」です。バックグラウンドの完了通知などで会話が更新されると、その分うしろにずれます。
+- If the conversation resumes between the check and the wake-up, one extra "〔keepalive〕" can slip in.
+- The wake-up interval is "55 minutes after the last write". If the conversation is updated by, for example, a background-completion notice, the wake-up shifts later by that much.
 
-## ライセンス
+## License
 
 MIT

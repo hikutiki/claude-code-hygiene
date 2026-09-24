@@ -1,60 +1,56 @@
-# ntfy-notify — Claude Code の応答をスマホへ通知するフック
+# ntfy-notify — a hook that sends Claude Code replies to your phone
 
-Claude Code が応答を終えたとき（`Stop`）と確認待ちになったとき（`Notification`）に、
-[ntfy](https://ntfy.sh) 経由でスマホへ通知します。応答の最後を見て「質問・経過報告・完了」を分け、
-優先度とアイコンを変えます。
+[日本語](README.ja.md)
 
-**目的:** 重要な判断を AI に勝手にさせないこと。AI が判断を人に仰いで止まったときに、離席中でもすぐ気づいて
-自分で決められるようにします（AI が「待たせるより進めてしまおう」と判断を肩代わりする動機を減らす）。
-承認そのものをスマホのボタンで行う仕組みは、別の道具（ntfy 承認）で扱います。
+When Claude Code finishes a reply (`Stop`) or waits for your confirmation (`Notification`), this hook sends a push notification to your phone through [ntfy](https://ntfy.sh). It looks at the end of the reply, sorts it into "question / progress report / done", and changes the priority and icon accordingly.
 
-> English summary: Push notifications for Claude Code via ntfy. Classifies the last reply as
-> question / progress / done (Japanese phrase lists, easy to edit) and skips cache-keepalive turns.
+**Why:** to keep the AI from making important decisions on its own. When it stops to ask you, you notice right away even when you are away from the desk, and you decide yourself (this reduces the AI's incentive to "just keep going rather than make you wait" and decide for you).
+Approving things from buttons on the phone is handled by a separate tool (ntfy approval).
 
-## 通知の種類
+## Notification types
 
-| 分類 | 条件（`classify_stop.py`） | 通知 | 優先度 |
+| type | condition (`classify_stop.py`) | notification | priority |
 |---|---|---|---|
-| question | 最後の応答が「？」で終わる、または質問の言い回しを含む | 「指示待ち」＋応答の先頭 120 文字 | 通常 |
-| progress | 「実行中です」「完了次第報告」などの言い回しを含む | 「経過報告」＋応答の先頭 120 文字 | 低 |
-| done | 上のどれでもない | 「応答完了」 | 通常 |
-| silent | 応答が「〔keepalive〕」で始まる（[cache-keepalive](../cache-keepalive/) の延命） | 送らない | — |
-| （Notification） | Claude Code の確認待ち | 「確認待ち」＋メッセージ | 高 |
+| question | the last reply ends with "？" or contains a question phrase | "waiting for instructions" + first 120 characters of the reply | normal |
+| progress | contains phrases such as "running now" or "will report when done" | "progress report" + first 120 characters of the reply | low |
+| done | none of the above | "reply finished" | normal |
+| silent | the reply starts with "〔keepalive〕" (from [cache-keepalive](../cache-keepalive/)) | not sent | — |
+| (Notification) | Claude Code is waiting for confirmation | "waiting for confirmation" + the message | high |
 
-言い回しの一覧は `classify_stop.py` の `QUESTION_PHRASES`・`PROGRESS_PHRASES`（日本語）にあります。自分の使い方に合わせて足し引きしてください。
+The phrase lists are `QUESTION_PHRASES` and `PROGRESS_PHRASES` in `classify_stop.py`. They are **Japanese**; replace or extend them with phrases in your own language.
 
-## 導入
+## Install
 
-1. スマホに ntfy アプリを入れ、自分で決めたトピック名を購読する。
-2. `ntfy-notify.sh` と `classify_stop.py` を同じフォルダに置く（例: `~/.claude/hooks/`）。`ntfy-notify.sh` に実行権限を付ける。
-3. `settings.example.json` の `hooks` を `~/.claude/settings.json` に追記する（パスは置いた場所に合わせる）。
-4. トピック名を環境変数 `NTFY_TOPIC` で渡す。Claude Code の設定ファイルの `env` に書くのが手軽です:
+1. Install the ntfy app on your phone and subscribe to a topic name you choose.
+2. Put `ntfy-notify.sh` and `classify_stop.py` in the same folder (for example `~/.claude/hooks/`). Make `ntfy-notify.sh` executable.
+3. Add the `hooks` from `settings.example.json` to `~/.claude/settings.json` (adjust the paths to where you placed the files).
+4. Pass the topic name in the environment variable `NTFY_TOPIC`. The easiest way is the `env` block of Claude Code's settings file:
    ```json
-   { "env": { "NTFY_TOPIC": "<推測されにくい文字列>" } }
+   { "env": { "NTFY_TOPIC": "<a hard-to-guess string>" } }
    ```
-   `NTFY_TOPIC` が無ければ何も送りません。
+   Without `NTFY_TOPIC`, nothing is sent.
 
-| 環境変数 | 既定 | 意味 |
+| environment variable | default | meaning |
 |---|---|---|
-| `NTFY_TOPIC` | なし（未設定なら送らない） | 送り先のトピック名 |
-| `NTFY_URL` | `https://ntfy.sh` | 自前の ntfy サーバーを使う場合の URL |
-| `CLAUDE_CODE_DISABLE_CLAUDE_MDS` | — | `1` のとき（ヘッドレス実行の目印）は通知しない |
+| `NTFY_TOPIC` | none (nothing is sent if unset) | topic to send to |
+| `NTFY_URL` | `https://ntfy.sh` | URL of your own ntfy server, if you run one |
+| `CLAUDE_CODE_DISABLE_CLAUDE_MDS` | — | when `1` (marker for headless runs), nothing is sent |
 
-依存: `bash`・`curl`・`jq`・`python3`。
+Requirements: `bash`, `curl`, `jq`, `python3`.
 
-## トピック名について（大事）
+## About topic names (important)
 
-- トピック名は **英数字と `_`・`-` で、最大 64 文字まで自由に設定できます**（ntfy の仕様: https://docs.ntfy.sh/publish/ ）。
-- 公開の ntfy.sh では、**トピック名を知っている人は誰でもその通知を読め、送り込めます**。トピック名が実質のパスワードです。
-- 通知には応答の先頭 120 文字が入ります。会話の中身が載るので、**推測されにくいランダムな文字列を、なるべく長く** 使ってください。
-- トピック名を書いた設定ファイルを公開リポジトリに入れないでください。
+- A topic name can be **any string of letters, digits, `_` and `-`, up to 64 characters** (ntfy spec: https://docs.ntfy.sh/publish/).
+- On the public ntfy.sh, **anyone who knows the topic name can read and send its notifications**. The topic name is effectively a password.
+- Notifications include the first 120 characters of the reply, so conversation content goes out. Use a **random, hard-to-guess string, as long as you can**.
+- Do not commit a settings file containing the topic name to a public repository.
 
-## 注意
+## Notes
 
-- 会話記録（transcript）の末尾には、応答の後ろに `system`（`stop_hook_summary`・`turn_duration` など）のレコードが付くことがあります。
-  `classify_stop.py` はそれを読み飛ばして最後の応答を探します（読み飛ばさないと、常に「応答完了」になります）。
-- 分類は言い回しの一致による簡単なものです。外れたときは一覧を調整してください。
+- The end of the transcript can have `system` records (`stop_hook_summary`, `turn_duration`, …) after the reply.
+  `classify_stop.py` skips them to find the last reply (if it didn't, everything would be classified as "done").
+- Classification is simple phrase matching. Adjust the lists when it misfires.
 
-## ライセンス
+## License
 
 MIT

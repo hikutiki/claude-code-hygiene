@@ -1,105 +1,101 @@
-# claude-code-hygiene — Claude Code の運用文書・memory・hooks を機械的に点検する4本
+# claude-code-hygiene — four tools that mechanically check Claude Code docs, memory, and hooks
 
-Claude Code を長く使うと、CLAUDE.md・skills・hooks・自動 memory の間で参照がずれていきます。
-「存在しないパスを指す memory」「登録したのに起動できない hook」「退役したはずのファイルへの参照」を、
-モデルを呼ばずに（トークン0で）見つけるための小さな道具です。
+[日本語](README.ja.md)
 
-| 道具 | 何を見つけるか | exit |
+The longer you use Claude Code, the more the references between CLAUDE.md, skills, hooks, and auto memory drift apart.
+These small tools find "memory pointing to paths that no longer exist", "hooks that are registered but cannot start", and "references to files you already retired" — without calling a model (zero tokens).
+
+| tool | what it finds | exit |
 |---|---|---|
-| `memcheck.py` | memory ディレクトリの陳腐化: 存在しないパス参照、索引 MEMORY.md と実体の不一致、退役語を正本として参照する記述、実体のない `[[wiki link]]`（参考表示） | 0=正常 / 1=検出 |
-| `hooks-selftest.py` | settings.json の全 hook を実際に起動して検査: 起動可能性、実行正常性、SessionStart の内容 | 0=全OK / 1=FAIL あり |
-| `refscan.sh` | 退役・移設したファイルの名前がどこに残っているかを横断検索し、「現役」と「記録・証跡」に分けて出す | 0=現役あり / 1=現役0件 / 2=引数なし |
-| `reachmap.py` | Claude Code が自動で読む入口（CLAUDE.md・hooks・skills・memory）から参照を辿って、その文書に到達できるかを判定。孤児・切れ参照・曖昧参照の棚卸し | 0=正常 / 2=エラー |
+| `memcheck.py` | Stale memory: references to missing paths, mismatch between the MEMORY.md index and the actual files, lines that still cite retired terms as current, `[[wiki links]]` with no target (informational) | 0 = clean / 1 = found |
+| `hooks-selftest.py` | Starts every hook in settings.json and checks it: can it launch, does it run cleanly, what does SessionStart output | 0 = all OK / 1 = some FAIL |
+| `refscan.sh` | Searches everywhere for the name of a retired or moved file and splits the hits into "live" and "records / evidence" | 0 = live hits / 1 = no live hits / 2 = no argument |
+| `reachmap.py` | Follows references from what Claude Code reads automatically (CLAUDE.md, hooks, skills, memory) and tells whether a document is reachable. Also inventories orphans, broken and ambiguous references | 0 = OK / 2 = error |
 
-依存: Python 3.9+ 標準ライブラリ、zsh、git、grep。
+Requirements: Python 3.9+ standard library, zsh, git, grep.
 
 ## memcheck.py
 
 ```bash
-python3 memcheck.py                      # cwd の git ルートに対応する memory を検査
-python3 memcheck.py --repo /path/to/repo # 相対パスの解決基準を指定
+python3 memcheck.py                      # check the memory that belongs to the git root of the cwd
+python3 memcheck.py --repo /path/to/repo # base for resolving relative paths
 python3 memcheck.py --memory-dir ~/.claude/projects/-path-to-repo/memory
 ```
 
-memory の場所は Claude Code の規則（`~/.claude/projects/<cwd の / を - に置換>/memory`）から自動で導きます。
-リポジトリ直下に `.memcheck.json` を置くと、退役語と免責語を指定できます（`.memcheck.example.json` 参照）。
+The memory location is derived from Claude Code's rule (`~/.claude/projects/<cwd with / replaced by ->/memory`).
+Put a `.memcheck.json` at the repository root to list retired terms and disclaimer words (see `.memcheck.example.json`).
 
-検査内容:
-1. バッククォートで囲まれたパスが実在するか（`~`・絶対・リポジトリ相対を解決）
-2. `[[link]]` の実体があるか（無くてもエラーにしない。将来書くべき印として表示）
-3. MEMORY.md の索引と実体ファイルの双方向一致
-4. 退役語を「退役」「旧」などの免責語なしに書いている行
+Checks:
+1. Do paths written in backticks exist (`~`, absolute, and repo-relative are resolved)
+2. Does the target of each `[[link]]` exist (missing targets are shown as "to be written", not as errors)
+3. Two-way match between the MEMORY.md index and the actual files
+4. Lines that write a retired term without a disclaimer such as "retired" or "old"
 
 ## hooks-selftest.py
 
 ```bash
-python3 hooks-selftest.py                       # <repo>/.claude/settings.local.json（無ければ settings.json）
-python3 hooks-selftest.py --settings path.json  # 明示
+python3 hooks-selftest.py                       # <repo>/.claude/settings.local.json (or settings.json)
+python3 hooks-selftest.py --settings path.json  # explicit file
 ```
 
-登録された全 hook について、コマンドの解決（CHECK-A）、ダミー入力での実行（CHECK-B）、
-SessionStart hook の出力内容（CHECK-C）を検査します。副作用はなく `.claude/` は変更しません。
+For every registered hook it checks command resolution (CHECK-A), a run with dummy input (CHECK-B), and the output of SessionStart hooks (CHECK-C). No side effects; `.claude/` is not modified.
 
 ## refscan.sh
 
 ```bash
-/bin/zsh refscan.sh <対象path> [出力base]     # basename から検索語（ハイフン版・アンダースコア版）を導出
-/bin/zsh refscan.sh --text <文字列> [出力base]
+/bin/zsh refscan.sh <target path> [output base]   # search terms (hyphen and underscore variants) come from the basename
+/bin/zsh refscan.sh --text <string> [output base]
 ```
 
-リポジトリ全体と `~/.claude`、LaunchAgents、シェル設定、crontab を横断検索し、
-`<base>-all.txt`（全件）と `<base>-live.txt`（現役）に落として、標準出力には件数と現役一覧だけを出します。
-書き込めない環境では標準出力モードに落ちます。
+Searches the whole repository plus `~/.claude`, LaunchAgents, shell config, and crontab. Writes `<base>-all.txt` (every hit) and `<base>-live.txt` (live hits) and prints only the counts and the live list. Falls back to stdout if it cannot write.
 
-リポジトリ直下の `.refscan.conf` で探索先の追加、探索先ごとの除外、「記録・証跡」とみなすパスの前方一致パターンを指定します
-（`.refscan.example.conf` 参照）。判定は全件ではなく現役件数で行います。ログに自分自身のコマンド文字列が記録されて自己一致することがあるためです。
+A `.refscan.conf` at the repository root adds search locations, per-location excludes, and path prefixes to treat as "records / evidence" (see `.refscan.example.conf`). The verdict uses the live count, not the total, because logs can record the command line of the search itself and match it.
 
-**既知の限界**: 検索語は basename から導くので、識別子の選び方は人に残ります。退役対象ごとに識別子を列挙して回してください。
+**Known limit:** search terms come from the basename, so choosing identifiers is still up to you. Run it once per identifier of whatever you retire.
 
 ## reachmap.py
 
 ```bash
-python3 reachmap.py docs/some-guide.md   # この文書は入口から辿って読まれうるか
-python3 reachmap.py --report             # 孤児・切れ参照・曖昧参照・同名重複の棚卸し（JSON も出力）
-python3 reachmap.py --no-home            # ~/.claude 等を入口に含めない
+python3 reachmap.py docs/some-guide.md   # can this document be reached from an entry point?
+python3 reachmap.py --report             # inventory of orphans, broken / ambiguous references, duplicate names (also JSON)
+python3 reachmap.py --no-home            # do not treat ~/.claude etc. as entry points
 ```
 
-入口として扱うもの:
-- ルートの `CLAUDE.md`・`CLAUDE.local.md`、`~/.claude/CLAUDE.md`
-- `.claude/settings.json`・`settings.local.json` の hook（SessionStart・UserPromptSubmit）が読み込む `.md`
-- `.claude/agents/*.md`、`.claude/skills/*/SKILL.md`、`~/.claude/skills/**/SKILL.md`
-- 自動メモリの `MEMORY.md`、ルートの `AGENTS.md`、`~/.codex/AGENTS.md`
-- ルート以外の `CLAUDE.md` は条件付き入口 `cond:<dir>`。`.reachmap.json` の `extra_entries` で追加できる
+Entry points:
+- `CLAUDE.md` and `CLAUDE.local.md` at the root, `~/.claude/CLAUDE.md`
+- `.md` files loaded by hooks (SessionStart, UserPromptSubmit) in `.claude/settings.json` / `settings.local.json`
+- `.claude/agents/*.md`, `.claude/skills/*/SKILL.md`, `~/.claude/skills/**/SKILL.md`
+- the auto memory `MEMORY.md`, the root `AGENTS.md`, `~/.codex/AGENTS.md`
+- `CLAUDE.md` files outside the root are conditional entries `cond:<dir>`. More can be added with `extra_entries` in `.reachmap.json`
 
-参照として辿るもの: バッククォート内のパス、Markdown リンク、括弧内のパス、`@path` 形式の import、既知拡張子を持つ語。
-「退役」「deprecated」などの語を含む行からの参照は否定言及として辺にしません（件数は出力に出ます）。
+References followed: paths in backticks, Markdown links, paths in parentheses, `@path` imports, words with a known file extension.
+References on lines that contain words such as "retired" or "deprecated" are treated as negative mentions and are not made into edges (they are still counted in the output).
 
-出力例:
+Example output (the tool prints Japanese labels):
 ```
-到達: 可 hop2 via CLAUDE.md ／ 他経路 3 ／ 否定言及 0
-到達: 不可 ／ 否定言及 1(CLAUDE.md) ／ 条件付き入口経由 0 ／ コード言及 2
+到達: 可 hop2 via CLAUDE.md ／ 他経路 3 ／ 否定言及 0        # reachable, 2 hops via CLAUDE.md / 3 other routes / 0 negative mentions
+到達: 不可 ／ 否定言及 1(CLAUDE.md) ／ 条件付き入口経由 0 ／ コード言及 2   # not reachable / 1 negative mention / 0 via conditional entries / 2 code mentions
 ```
 
-設定は `.reachmap.json`（`.reachmap.example.json` 参照）。`tests/reachmap-fixture/` に合成テスト用の小さなリポジトリと期待値があります。
+Configuration lives in `.reachmap.json` (see `.reachmap.example.json`). `tests/reachmap-fixture/` holds a small synthetic repository and expected results.
 
-**既知の限界**: 否定判定は行単位なので「旧Xは退役。現行はYを読む」の1行では Y への辺も落ちます。迷ったら到達側に倒す方針で、曖昧参照は全候補に辺を張ります。
+**Known limit:** negative detection works per line, so a single line like "Old X is retired; read Y instead" also drops the edge to Y. When in doubt it errs toward "reachable", and ambiguous references get edges to every candidate.
 
-## 同梱: cache-keepalive（会話キャッシュの延命フック）
+## Included: cache-keepalive (keeps the conversation cache alive)
 
-点検の道具とは別に、[`cache-keepalive/`](cache-keepalive/README.md) を同梱しています。
-放置中の会話を 55 分ごとに短く起こしてプロンプトキャッシュ（1時間）を延命する Claude Code フックです。
-同じ会話に戻るときだけ得になります。損益分岐点・止め方は同フォルダの README にあります。
+Separately from the checks, [`cache-keepalive/`](cache-keepalive/README.md) is included.
+It is a Claude Code hook that briefly wakes an idle conversation every 55 minutes so the prompt cache (1 hour) does not expire.
+It only pays off when you come back to the same conversation. The break-even point and how to stop it are in its README.
 
-## 同梱: ntfy-notify（スマホへの通知フック）
+## Included: ntfy-notify (push notifications to your phone)
 
-[`ntfy-notify/`](ntfy-notify/README.md) は、Claude Code の応答を ntfy でスマホへ通知するフックです。
-目的は、重要な判断を AI に勝手にさせないこと。AI が判断を人に仰いで止まったとき、離席中でもすぐ気づけるようにします。
+[`ntfy-notify/`](ntfy-notify/README.md) is a hook that sends Claude Code replies to your phone through ntfy.
+The point is to keep the AI from making important decisions on its own: when it stops to ask you, you notice right away even when you are away from the desk.
 
-## AI エージェントと使う
+## Using with AI agents
 
-どれも固定コマンド1本で答えが出るので、エージェントに「記憶から列挙させる」代わりにこれを実行させ、
-出力の集計行だけを読ませる使い方を想定しています。
+Each tool answers with one fixed command. Instead of asking an agent to list things from memory, have it run these and read only the summary lines.
 
-## ライセンス
+## License
 
 MIT
